@@ -9,22 +9,35 @@ const effectText = document.querySelector("#effectText");
 const comboText = document.querySelector("#comboText");
 const rewindText = document.querySelector("#rewindText");
 const statusText = document.querySelector("#statusText");
+const playerNameInput = document.querySelector("#playerNameInput");
+const playerNameHint = document.querySelector("#playerNameHint");
+const leaderboardList = document.querySelector("#leaderboardList");
+const achievementToast = document.querySelector("#achievementToast");
 const overlay = document.querySelector("#overlay");
 const overlayKicker = document.querySelector("#overlayKicker");
 const overlayTitle = document.querySelector("#overlayTitle");
 const overlayText = document.querySelector("#overlayText");
 const startButton = document.querySelector("#startButton");
+const overlayStartButton = document.querySelector("#overlayStartButton");
 const restartButton = document.querySelector("#restartButton");
 const soundButton = document.querySelector("#soundButton");
+const playerAvatar = document.querySelector("#playerAvatar");
+const playerProfileName = document.querySelector("#playerProfileName");
 const guideTitle = document.querySelector("#guideTitle");
 const guideDetailButton = document.querySelector("#guideDetailButton");
 const guideSummary = document.querySelector("#guideSummary");
-const guideDetailPanel = document.querySelector("#guideDetailPanel");
-const guideBackButton = document.querySelector("#guideBackButton");
+const mechanicsPanel = document.querySelector("#mechanicsPanel");
+const mechanicsBackButton = document.querySelector("#mechanicsBackButton");
 
 const gridSize = 24;
 const cellSize = canvas.width / gridSize;
 const bestScoreKey = "shadow-snake-best-score";
+const playerNameKey = "shadow-snake-player-name";
+const playerAvatarKey = "shadow-snake-player-avatar";
+const avatarPool = ["🐍", "🌸", "⭐", "💎", "🍬", "🦊", "🐱", "🐰", "🧸", "🎮", "🌙", "🍓"];
+const SUPABASE_URL = "https://ziwcvppreuwefooetbhv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_6i_z6wioqkwI72mV3Pxpfg_p8yVDrc_";
+const supabaseClient = createSupabaseClient();
 
 const trailLife = 2800;
 const shadowFadeTime = 2800;
@@ -261,20 +274,45 @@ let statusOverride = {
 let soundEnabled = true;
 let audioContext = null;
 let hasStartedOnce = false;
+let currentPlayerName = "";
+let currentPlayerAvatar = "";
+let hasSubmittedCurrentScore = false;
+let leaderboardCache = [];
+let achievementToastTimer = null;
+let currentBgm = null;
+let currentBgmSrc = "";
+let bgmVolume = 0.12;
+let bgmFadeTimer = null;
+let outgoingBgm = null;
+let outgoingBgmFadeTimer = null;
+let bgmSwitchToken = 0;
 
 startButton.addEventListener("click", handleStartButtonClick);
+
+if (overlayStartButton) {
+  overlayStartButton.addEventListener("click", handleStartButtonClick);
+}
+
 restartButton.addEventListener("click", startGame);
 soundButton.addEventListener("click", toggleSound);
 document.addEventListener("keydown", handleKeyDown);
 
+if (playerNameInput) {
+  playerNameInput.addEventListener("input", handlePlayerNameInput);
+}
+
 if (guideDetailButton) {
-  guideDetailButton.addEventListener("click", showGuideDetail);
+  guideDetailButton.addEventListener("click", showMechanicsPanel);
 }
 
-if (guideBackButton) {
-  guideBackButton.addEventListener("click", showGuideSummary);
+if (mechanicsBackButton) {
+  mechanicsBackButton.addEventListener("click", hideMechanicsPanel);
 }
 
+loadPlayerName();
+loadPlayerProfile();
+updatePlayerProfile();
+loadLeaderboard();
 updateSoundButton();
 setupBoard();
 showStartScreen();
@@ -333,6 +371,15 @@ function setupBoard() {
 }
 
 function startGame() {
+  const name = getValidatedPlayerName();
+
+  if (!name) {
+    return;
+  }
+
+  assignRandomAvatarIfNeeded();
+  updatePlayerProfile();
+  hasSubmittedCurrentScore = false;
   hasStartedOnce = true;
   ensureAudioReady();
   playSound("ui");
@@ -341,8 +388,10 @@ function startGame() {
   setupBoard();
   gameState = "playing";
   overlay.classList.add("is-hidden");
+  overlay.classList.remove("is-start-screen");
   startButton.textContent = "重新开局";
   statusText.textContent = "影子正在记录你的路线";
+  playBgmForCurrentTier();
   scheduleNextMove();
 }
 
@@ -358,6 +407,7 @@ function handleStartButtonClick() {
 function showStartScreen() {
   gameState = "ready";
   overlay.classList.remove("is-hidden");
+  overlay.classList.add("is-start-screen");
   overlayKicker.textContent = "准备开始";
   overlayTitle.textContent = "影子贪吃蛇";
   overlayText.textContent = "吃到食物后，你刚走过的路线会变成影子障碍。别被过去的自己困住。";
@@ -365,8 +415,330 @@ function showStartScreen() {
   statusText.textContent = "等待开始";
 }
 
+function createSupabaseClient() {
+  const hasPlaceholderConfig =
+    !SUPABASE_URL ||
+    !SUPABASE_ANON_KEY ||
+    SUPABASE_URL.indexOf("这里填") !== -1 ||
+    SUPABASE_ANON_KEY.indexOf("这里填") !== -1;
+
+  if (hasPlaceholderConfig) {
+    return null;
+  }
+
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    console.warn("Supabase SDK 未加载，排行榜暂不可用。");
+    return null;
+  }
+
+  try {
+    return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (error) {
+    console.error("Supabase 初始化失败：", error);
+    return null;
+  }
+}
+
+function loadPlayerName() {
+  let savedName = "";
+
+  try {
+    savedName = localStorage.getItem(playerNameKey) || "";
+  } catch (error) {
+    savedName = "";
+  }
+
+  currentPlayerName = savedName.trim().slice(0, 12);
+
+  if (playerNameInput) {
+    playerNameInput.value = currentPlayerName;
+  }
+}
+
+function loadPlayerProfile() {
+  try {
+    currentPlayerAvatar = localStorage.getItem(playerAvatarKey) || "";
+  } catch (error) {
+    currentPlayerAvatar = "";
+  }
+
+  if (!avatarPool.includes(currentPlayerAvatar)) {
+    currentPlayerAvatar = "";
+  }
+}
+
+function assignRandomAvatarIfNeeded() {
+  if (currentPlayerAvatar) {
+    return;
+  }
+
+  currentPlayerAvatar = avatarPool[Math.floor(Math.random() * avatarPool.length)];
+
+  try {
+    localStorage.setItem(playerAvatarKey, currentPlayerAvatar);
+  } catch (error) {
+    console.warn("头像保存失败：", error);
+  }
+}
+
+function updatePlayerProfile() {
+  if (playerAvatar) {
+    playerAvatar.textContent = currentPlayerAvatar || "🐍";
+  }
+
+  if (playerProfileName) {
+    playerProfileName.textContent = currentPlayerName || "未命名玩家";
+  }
+}
+
+function handlePlayerNameInput() {
+  if (!playerNameInput) {
+    return;
+  }
+
+  if (playerNameInput.value.length > 12) {
+    playerNameInput.value = playerNameInput.value.slice(0, 12);
+  }
+
+  if (playerNameInput.value.trim()) {
+    setPlayerNameHint("");
+  }
+}
+
+function getValidatedPlayerName() {
+  const name = playerNameInput ? playerNameInput.value.trim().slice(0, 12) : "";
+
+  if (playerNameInput && playerNameInput.value !== name) {
+    playerNameInput.value = name;
+  }
+
+  if (!name) {
+    setPlayerNameHint("请输入昵称");
+
+    if (statusText) {
+      statusText.textContent = "请输入昵称后开始游戏";
+    }
+
+    if (playerNameInput) {
+      playerNameInput.focus();
+    }
+
+    return "";
+  }
+
+  setPlayerNameHint("");
+
+  try {
+    localStorage.setItem(playerNameKey, name);
+  } catch (error) {
+    console.warn("昵称保存失败：", error);
+  }
+
+  currentPlayerName = name;
+  updatePlayerProfile();
+  return name;
+}
+
+function setPlayerNameHint(message) {
+  if (playerNameHint) {
+    playerNameHint.textContent = message;
+  }
+}
+
+function isTextInputTarget(target) {
+  if (!target) {
+    return false;
+  }
+
+  const tagName = target.tagName;
+
+  return target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
+
+async function submitScoreIfNeeded(finalScore, finalPlayerName) {
+  if (hasSubmittedCurrentScore) {
+    return;
+  }
+
+  const scoreToSubmit = Number(finalScore) || 0;
+  const playerNameToSubmit = finalPlayerName ? String(finalPlayerName).trim().slice(0, 12) : "";
+
+  if (!playerNameToSubmit || scoreToSubmit <= 0) {
+    return;
+  }
+
+  if (!supabaseClient) {
+    console.warn("Supabase 未配置，分数未上传");
+    renderLeaderboardMessage("排行榜未配置");
+    return;
+  }
+
+  hasSubmittedCurrentScore = true;
+  let error = null;
+
+  try {
+    const result = await supabaseClient
+      .from("leaderboard")
+      .insert({
+        player_name: playerNameToSubmit,
+        score: scoreToSubmit
+      });
+
+    error = result.error;
+  } catch (requestError) {
+    error = requestError;
+  }
+
+  if (error) {
+    console.error("提交分数失败：", error);
+    hasSubmittedCurrentScore = false;
+
+    if (statusText) {
+      statusText.textContent = "分数上传失败，请检查网络或 Supabase 配置";
+    }
+
+    return;
+  }
+
+  loadLeaderboard();
+}
+
+async function loadLeaderboard() {
+  if (!leaderboardList) {
+    return;
+  }
+
+  if (!supabaseClient) {
+    renderLeaderboardMessage("排行榜待连接");
+    return;
+  }
+
+  let data = [];
+  let error = null;
+
+  try {
+    const result = await supabaseClient
+      .from("leaderboard")
+      .select("player_name, score, created_at")
+      .order("score", { ascending: false })
+      .limit(10);
+
+    data = result.data;
+    error = result.error;
+  } catch (requestError) {
+    error = requestError;
+  }
+
+  if (error) {
+    console.error("读取排行榜失败：", error);
+    renderLeaderboardMessage("排行榜暂不可用");
+    return;
+  }
+
+  leaderboardCache = data || [];
+  renderLeaderboard(data || []);
+}
+
+function getTopThreeThreshold() {
+  if (!leaderboardCache || leaderboardCache.length < 3) {
+    return 0;
+  }
+
+  return Number(leaderboardCache[2].score) || 0;
+}
+
+function isTopThreeScore(finalScore) {
+  if (!leaderboardCache || leaderboardCache.length < 3) {
+    return finalScore > 0;
+  }
+
+  return finalScore > getTopThreeThreshold();
+}
+
+function showAchievementToast(title, subtitle) {
+  if (!achievementToast) {
+    return;
+  }
+
+  clearTimeout(achievementToastTimer);
+
+  achievementToast.innerHTML =
+    '<span class="achievement-toast-title">' + title + '</span>' +
+    '<span class="achievement-toast-subtitle">' + subtitle + '</span>';
+
+  achievementToast.classList.add("is-visible");
+
+  achievementToastTimer = setTimeout(function () {
+    achievementToast.classList.remove("is-visible");
+  }, 2200);
+}
+
+function renderLeaderboard(items) {
+  if (!leaderboardList) {
+    return;
+  }
+
+  leaderboardList.innerHTML = "";
+
+  if (items.length === 0) {
+    renderLeaderboardMessage("暂无成绩");
+    return;
+  }
+
+  items.forEach(function (item, index) {
+    const medalMap = ["🥇", "🥈", "🥉"];
+    const li = document.createElement("li");
+    const rank = document.createElement("span");
+    const avatar = document.createElement("span");
+    const playerName = document.createElement("strong");
+    const scoreValue = document.createElement("span");
+    const rowAvatar = item.player_name === currentPlayerName && currentPlayerAvatar
+      ? currentPlayerAvatar
+      : "🐍";
+
+    rank.className = "leaderboard-rank";
+    avatar.className = "leaderboard-avatar";
+    playerName.className = "leaderboard-name";
+    scoreValue.className = "leaderboard-score";
+
+    rank.textContent = medalMap[index] || String(index + 1);
+    avatar.textContent = rowAvatar;
+    playerName.textContent = item.player_name || "匿名玩家";
+    scoreValue.textContent = String(item.score || 0);
+
+    li.appendChild(rank);
+    li.appendChild(avatar);
+    li.appendChild(playerName);
+    li.appendChild(scoreValue);
+    leaderboardList.appendChild(li);
+  });
+}
+
+function renderLeaderboardMessage(message) {
+  if (!leaderboardList) {
+    return;
+  }
+
+  leaderboardList.innerHTML = "";
+
+  const li = document.createElement("li");
+  li.className = "leaderboard-empty";
+  li.textContent = message;
+  leaderboardList.appendChild(li);
+}
+
 function handleKeyDown(event) {
   const key = event.key.toLowerCase();
+
+  if (isTextInputTarget(event.target)) {
+    if (key === "enter" && gameState !== "playing") {
+      event.preventDefault();
+      handleStartButtonClick();
+    }
+
+    return;
+  }
+
   const directionMap = {
     arrowup: { x: 0, y: -1 },
     w: { x: 0, y: -1 },
@@ -418,8 +790,10 @@ function pauseGame() {
   pausedAt = performance.now();
   clearTimeout(moveTimer);
   playSound("pause");
+  pauseBgm();
 
   overlay.classList.remove("is-hidden");
+  overlay.classList.remove("is-start-screen");
   overlayKicker.textContent = "暂停中";
   overlayTitle.textContent = "游戏暂停";
   overlayText.textContent = "按空格或 P 继续游戏。";
@@ -438,6 +812,7 @@ function resumeGame() {
   startButton.textContent = "重新开局";
   statusText.textContent = "继续移动，别撞到影子";
   playSound("resume");
+  resumeBgm();
   scheduleNextMove();
 }
 
@@ -1142,6 +1517,12 @@ function spawnClearRipple(cell) {
 }
 
 function endGame(reason) {
+  const previousBestScore = bestScore;
+  const finalScore = score;
+  const finalPlayerName = currentPlayerName;
+  const hasNewRecord = finalScore > previousBestScore;
+  const hasTopThree = isTopThreeScore(finalScore);
+
   gameState = "ended";
   clearTimeout(moveTimer);
   activeEffect = {
@@ -1153,17 +1534,28 @@ function endGame(reason) {
   };
   comboCount = 0;
   lastFoodEatAt = 0;
-  playSound("death");
+  playSound("gameOver");
+  stopBgm();
 
-  if (score > bestScore) {
+  if (hasNewRecord) {
     bestScore = score;
     saveBestScore(bestScore);
   }
 
+  if (hasNewRecord && hasTopThree) {
+    showAchievementToast("👑 新纪录 & 冲进前三！", "太强啦，这局直接登上榜单～");
+  } else if (hasNewRecord) {
+    showAchievementToast("🎀 新纪录！", "超过了自己的最高分～");
+  } else if (hasTopThree) {
+    showAchievementToast("👑 冲进前三！", "你的分数进入排行榜前三啦～");
+  }
+
+  submitScoreIfNeeded(finalScore, finalPlayerName);
   updateHud();
   overlay.classList.remove("is-hidden");
+  overlay.classList.remove("is-start-screen");
   overlayKicker.textContent = "游戏结束";
-  overlayTitle.textContent = "最终分数 " + score;
+  overlayTitle.textContent = "最终分数 " + finalScore;
   overlayText.textContent = reason;
   startButton.textContent = "再玩一次";
   statusText.textContent = "本局结束";
@@ -1345,6 +1737,7 @@ function checkProgressTierUnlocks(cell) {
       };
       spawnParticles(cell, tier.particleType, getTierUnlockParticleCount(tier));
       playSound("unlock");
+      playBgmForCurrentTier();
       compressSnakeForEvolution(tier, cell);
     }
   });
@@ -2579,53 +2972,254 @@ function spawnParticles(cell, type, count) {
   }
 }
 
+function getCurrentBgmSrc() {
+  const tier = getProgressTier();
+
+  if (tier.minScore >= 700) {
+    return "audio/bgm-battle.mp3";
+  }
+
+  if (tier.minScore >= 220) {
+    return "audio/bgm-pink.mp3";
+  }
+
+  return "audio/bgm-default.mp3";
+}
+
+function playBgmForCurrentTier() {
+  if (!soundEnabled || gameState !== "playing") {
+    return;
+  }
+
+  switchBgm(getCurrentBgmSrc());
+}
+
+function switchBgm(newSrc) {
+  if (!newSrc || !soundEnabled) {
+    return;
+  }
+
+  if (currentBgm && currentBgmSrc === newSrc) {
+    return;
+  }
+
+  const previousBgm = currentBgm;
+  const nextBgm = new Audio(newSrc);
+  const switchToken = bgmSwitchToken + 1;
+
+  bgmSwitchToken = switchToken;
+  nextBgm.loop = true;
+  nextBgm.preload = "auto";
+  nextBgm.volume = 0;
+  nextBgm.addEventListener("error", function () {
+    console.warn("背景音乐加载失败：", newSrc);
+  });
+
+  nextBgm.play()
+    .then(function () {
+      if (switchToken !== bgmSwitchToken) {
+        cleanupBgmElement(nextBgm);
+        return;
+      }
+
+      clearBgmFadeTimer();
+      clearOutgoingBgmFadeTimer();
+
+      if (outgoingBgm && outgoingBgm !== previousBgm) {
+        cleanupBgmElement(outgoingBgm);
+      }
+
+      outgoingBgm = previousBgm;
+      currentBgm = nextBgm;
+      currentBgmSrc = newSrc;
+      bgmFadeTimer = fadeAudioElementTo(nextBgm, bgmVolume, 1500, function () {
+        bgmFadeTimer = null;
+      });
+
+      if (outgoingBgm) {
+        const fadingOutBgm = outgoingBgm;
+
+        outgoingBgmFadeTimer = fadeAudioElementTo(fadingOutBgm, 0, 1500, function () {
+          cleanupBgmElement(fadingOutBgm);
+
+          if (outgoingBgm === fadingOutBgm) {
+            outgoingBgm = null;
+          }
+
+          outgoingBgmFadeTimer = null;
+        });
+      }
+    })
+    .catch(function (error) {
+      console.warn("背景音乐播放失败：", error);
+    });
+}
+
+function fadeBgmTo(targetVolume, duration, onComplete) {
+  if (!currentBgm) {
+    return;
+  }
+
+  clearBgmFadeTimer();
+
+  bgmFadeTimer = fadeAudioElementTo(currentBgm, targetVolume, duration, function () {
+    bgmFadeTimer = null;
+
+    if (onComplete) {
+      onComplete();
+    }
+  });
+}
+
+function clearBgmFadeTimer() {
+  if (bgmFadeTimer) {
+    clearInterval(bgmFadeTimer);
+    bgmFadeTimer = null;
+  }
+}
+
+function clearOutgoingBgmFadeTimer() {
+  if (outgoingBgmFadeTimer) {
+    clearInterval(outgoingBgmFadeTimer);
+    outgoingBgmFadeTimer = null;
+  }
+}
+
+function fadeAudioElementTo(audio, targetVolume, duration, onComplete) {
+  const startVolume = audio.volume;
+  const safeTargetVolume = Math.max(0, Math.min(1, targetVolume));
+  const safeDuration = Math.max(1, duration);
+  const startedAt = performance.now();
+
+  const timer = setInterval(function () {
+    const progress = Math.min(1, (performance.now() - startedAt) / safeDuration);
+    audio.volume = startVolume + (safeTargetVolume - startVolume) * progress;
+
+    if (progress >= 1) {
+      clearInterval(timer);
+      audio.volume = safeTargetVolume;
+
+      if (onComplete) {
+        onComplete();
+      }
+    }
+  }, 40);
+
+  return timer;
+}
+
+function pauseBgm() {
+  if (!currentBgm) {
+    return;
+  }
+
+  fadeBgmTo(0.06, 300, function () {
+    if (currentBgm && gameState === "paused") {
+      currentBgm.pause();
+    }
+  });
+}
+
+function resumeBgm() {
+  if (!soundEnabled || gameState !== "playing") {
+    return;
+  }
+
+  if (!currentBgm) {
+    playBgmForCurrentTier();
+    return;
+  }
+
+  currentBgm.play().catch(function (error) {
+    console.warn("背景音乐播放失败：", error);
+  });
+  fadeBgmTo(bgmVolume, 500);
+}
+
+function stopBgm() {
+  const bgmToStop = currentBgm;
+  const outgoingToStop = outgoingBgm;
+  const stopToken = bgmSwitchToken + 1;
+
+  bgmSwitchToken = stopToken;
+  currentBgm = null;
+  currentBgmSrc = "";
+  outgoingBgm = null;
+  clearBgmFadeTimer();
+  clearOutgoingBgmFadeTimer();
+
+  if (bgmToStop) {
+    fadeAudioElementTo(bgmToStop, 0, 1000, function () {
+      if (stopToken === bgmSwitchToken) {
+        cleanupBgmElement(bgmToStop);
+      }
+    });
+  }
+
+  if (outgoingToStop && outgoingToStop !== bgmToStop) {
+    fadeAudioElementTo(outgoingToStop, 0, 800, function () {
+      cleanupBgmElement(outgoingToStop);
+    });
+  }
+}
+
+function cleanupBgmElement(audio) {
+  if (!audio) {
+    return;
+  }
+
+  audio.pause();
+  audio.currentTime = 0;
+  audio.removeAttribute("src");
+  audio.load();
+}
+
 function toggleSound() {
   soundEnabled = !soundEnabled;
   updateSoundButton();
 
-  if (soundEnabled && hasStartedOnce) {
+  if (!soundEnabled) {
+    stopBgm();
+    return;
+  }
+
+  if (hasStartedOnce) {
     ensureAudioReady();
     playSound("ui");
+
+    if (gameState === "playing") {
+      playBgmForCurrentTier();
+    }
   }
 }
 
 function updateSoundButton() {
-  soundButton.textContent = soundEnabled ? "音效：开" : "音效：关";
+  soundButton.textContent = soundEnabled ? "声音：开" : "声音：关";
 }
 
-function showGuideDetail() {
-  if (!guideSummary || !guideDetailPanel) {
-    return;
-  }
+function showMechanicsPanel() {
+  document.body.classList.add("is-viewing-mechanics");
 
-  guideSummary.classList.add("is-hidden");
-  guideDetailPanel.classList.remove("is-hidden");
-
-  if (guideTitle) {
-    guideTitle.textContent = "详细机制";
+  if (mechanicsPanel) {
+    mechanicsPanel.classList.remove("is-hidden");
   }
 
   if (guideDetailButton) {
-    guideDetailButton.classList.add("is-hidden");
+    guideDetailButton.setAttribute("aria-expanded", "true");
   }
 
   playSound("ui");
 }
 
-function showGuideSummary() {
-  if (!guideSummary || !guideDetailPanel) {
-    return;
-  }
+function hideMechanicsPanel() {
+  document.body.classList.remove("is-viewing-mechanics");
 
-  guideDetailPanel.classList.add("is-hidden");
-  guideSummary.classList.remove("is-hidden");
-
-  if (guideTitle) {
-    guideTitle.textContent = "玩法说明";
+  if (mechanicsPanel) {
+    mechanicsPanel.classList.add("is-hidden");
   }
 
   if (guideDetailButton) {
-    guideDetailButton.classList.remove("is-hidden");
+    guideDetailButton.setAttribute("aria-expanded", "false");
   }
 
   playSound("ui");
@@ -2683,15 +3277,20 @@ function playSound(type) {
     playTone(620, 0.08, "square", 0.026, now);
     playTone(420, 0.12, "triangle", 0.028, now + 0.05);
   } else if (type === "rewind") {
-    playTone(980, 0.08, "triangle", 0.034, now);
-    playTone(640, 0.12, "sine", 0.032, now + 0.07);
-    playTone(420, 0.16, "triangle", 0.026, now + 0.16);
+    playTone(980, 0.08, "triangle", 0.04, now);
+    playTone(640, 0.12, "sine", 0.038, now + 0.07);
+    playTone(420, 0.16, "triangle", 0.032, now + 0.16);
   } else if (type === "shadow") {
     playTone(130, 0.2, "sawtooth", 0.035, now);
     playTone(92, 0.18, "triangle", 0.025, now + 0.05);
   } else if (type === "death") {
     playTone(260, 0.18, "sawtooth", 0.05, now);
     playTone(150, 0.26, "sawtooth", 0.045, now + 0.12);
+  } else if (type === "gameOver") {
+    playTone(740, 0.11, "sine", 0.046, now);
+    playTone(620, 0.13, "triangle", 0.044, now + 0.1);
+    playTone(480, 0.18, "sine", 0.04, now + 0.22);
+    playTone(880, 0.08, "triangle", 0.018, now + 0.42);
   } else if (type === "phase") {
     playTone(760, 0.08, "triangle", 0.04, now);
     playTone(1180, 0.1, "sine", 0.026, now + 0.04);
@@ -2706,28 +3305,28 @@ function playSound(type) {
     playTone(540, 0.06, "sine", 0.025, now);
     playTone(720, 0.07, "sine", 0.02, now + 0.04);
   } else if (type === "unlock") {
-    playTone(420, 0.62, "triangle", 0.034, now, 980);
-    playTone(760, 0.58, "sine", 0.026, now + 0.015, 1760);
-    playTone(1880, 0.32, "sine", 0.008, now + 0.06, 2880);
+    playTone(420, 0.62, "triangle", 0.04, now, 980);
+    playTone(760, 0.58, "sine", 0.032, now + 0.015, 1760);
+    playTone(1880, 0.32, "sine", 0.01, now + 0.06, 2880);
   } else if (type === "powerUp") {
-    playTone(640, 0.11, "triangle", 0.032, now);
-    playTone(960, 0.13, "sine", 0.024, now + 0.035);
+    playTone(640, 0.11, "triangle", 0.04, now);
+    playTone(960, 0.13, "sine", 0.03, now + 0.035);
   } else if (type === "warning-countdown-1500") {
-    playTone(820, 0.075, "sine", 0.02, now);
+    playTone(820, 0.075, "sine", 0.024, now);
   } else if (type === "warning-countdown-1000") {
-    playTone(1040, 0.08, "sine", 0.024, now);
+    playTone(1040, 0.08, "sine", 0.028, now);
   } else if (type === "warning-countdown-500") {
-    playTone(1320, 0.09, "triangle", 0.028, now);
+    playTone(1320, 0.09, "triangle", 0.032, now);
   } else if (type === "warning-haste" || type === "warning-hasteShield") {
-    playTone(920, 0.04, "square", 0.018, now);
-    playTone(700, 0.05, "square", 0.016, now + 0.045);
+    playTone(920, 0.04, "square", 0.022, now);
+    playTone(700, 0.05, "square", 0.02, now + 0.045);
   } else if (type === "warning-soft" || type === "warning-prism") {
-    playTone(1040, 0.08, "sine", 0.02, now);
+    playTone(1040, 0.08, "sine", 0.024, now);
   } else if (type === "warning-magnet") {
-    playTone(520, 0.05, "square", 0.015, now);
-    playTone(360, 0.06, "triangle", 0.014, now + 0.05);
+    playTone(520, 0.05, "square", 0.019, now);
+    playTone(360, 0.06, "triangle", 0.018, now + 0.05);
   } else if (type === "warning-evolveShield" || type === "warning-rewindShield") {
-    playTone(620, 0.05, "sine", 0.014, now);
+    playTone(620, 0.05, "sine", 0.018, now);
   }
 }
 

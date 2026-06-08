@@ -4,14 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>影子贪吃蛇</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=sound-toast1">
 </head>
 <body>
   <main class="game-shell">
     <header class="top-bar">
-      <div>
-        <p class="eyebrow">Canvas Game</p>
-        <h1>影子贪吃蛇</h1>
+      <div class="top-heading">
+        <div>
+          <p class="eyebrow">Canvas Game</p>
+          <h1>影子贪吃蛇</h1>
+        </div>
+
+        <div class="player-profile" id="playerProfile" aria-label="玩家信息">
+          <span class="player-avatar" id="playerAvatar">🐍</span>
+          <span class="player-profile-name" id="playerProfileName">未命名玩家</span>
+        </div>
       </div>
 
       <section class="stats" aria-label="游戏数据">
@@ -54,25 +61,23 @@
           <p id="overlayKicker" class="overlay-kicker">准备开始</p>
           <h2 id="overlayTitle">影子贪吃蛇</h2>
           <p id="overlayText">吃到食物后，你刚走过的路线会变成影子障碍。别被过去的自己困住。</p>
+          <label class="player-name-field overlay-name-field" for="playerNameInput">
+            <span>玩家昵称</span>
+            <input id="playerNameInput" type="text" maxlength="12" autocomplete="nickname" placeholder="输入昵称开始游戏">
+          </label>
+          <p id="playerNameHint" class="player-name-hint" aria-live="polite"></p>
+          <button id="overlayStartButton" class="primary-button overlay-start-button" type="button">开始游戏</button>
         </div>
       </div>
     </section>
 
-    <section class="play-guide" aria-label="玩法说明">
+    <section class="play-guide" aria-label="道具说明">
       <div class="guide-header">
-        <h2 id="guideTitle">玩法说明</h2>
-        <button id="guideDetailButton" class="guide-toggle-button" type="button">详细机制</button>
+        <h2 id="guideTitle">道具说明</h2>
+        <button id="guideDetailButton" class="guide-toggle-button" type="button">机制说明</button>
       </div>
 
       <div id="guideSummary" class="guide-grid">
-        <article class="guide-card">
-          <span class="guide-icon food-icon"></span>
-          <p><strong>红宝石</strong>最外两圈更高分，连吃升音。</p>
-        </article>
-        <article class="guide-card">
-          <span class="guide-icon shadow-icon"></span>
-          <p><strong>影子</strong>描边是预警，实体后会碰撞。</p>
-        </article>
         <article class="guide-card">
           <span class="guide-icon clear-icon"></span>
           <p><strong>清影/凝核</strong>清影子或缩短蛇身。</p>
@@ -90,71 +95,9 @@
           <p><strong>磁铁</strong>小范围吸收附近红宝石。</p>
         </article>
         <article class="guide-card">
-          <span class="guide-icon evolve-icon"></span>
-          <p><strong>进化</strong>50~1000 分解锁高级外观。</p>
+          <span class="guide-icon compress-icon"></span>
+          <p><strong>凝核</strong>压缩蛇身，扩大活动空间。</p>
         </article>
-        <article class="guide-card">
-          <span class="guide-icon rewind-icon"></span>
-          <p><strong>回溯</strong>220 分解锁，700 / 1000 分升储备。</p>
-        </article>
-        <article class="guide-card guide-card-wide">
-          <span class="guide-icon control-icon">W</span>
-          <p><strong>操作</strong>WASD / 方向键移动，Space / P 暂停。</p>
-        </article>
-      </div>
-
-      <div id="guideDetailPanel" class="guide-detail-panel is-hidden">
-        <div class="guide-detail-hero">
-          <span class="guide-detail-badge">MECHANICS</span>
-          <p>影子、道具、进化、音效与回溯共同构成后期路线规划。</p>
-        </div>
-
-        <div class="guide-detail-content">
-          <article class="guide-detail-item guide-detail-shadow">
-            <span class="guide-detail-index">01</span>
-            <div>
-              <strong>影子路线</strong>
-              <p>吃红宝石后，近期路线先预警再凝成实体障碍。</p>
-            </div>
-          </article>
-          <article class="guide-detail-item guide-detail-score">
-            <span class="guide-detail-index">02</span>
-            <div>
-              <strong>分数边缘</strong>
-              <p>红宝石基础 +10；最外圈 +10，第二圈 +5；棱彩翻倍。</p>
-            </div>
-          </article>
-          <article class="guide-detail-item guide-detail-power">
-            <span class="guide-detail-index">03</span>
-            <div>
-              <strong>道具控场</strong>
-              <p>清影、超频、棱彩、磁铁、凝核分别处理影子、速度、分数和空间。</p>
-            </div>
-          </article>
-          <article class="guide-detail-item guide-detail-evolve">
-            <span class="guide-detail-index">04</span>
-            <div>
-              <strong>外观进化</strong>
-              <p>50~1000 分逐步升级外观、速度，并在过长时压缩蛇身。</p>
-            </div>
-          </article>
-          <article class="guide-detail-item guide-detail-rewind">
-            <span class="guide-detail-index">05</span>
-            <div>
-              <strong>影子回溯</strong>
-              <p>220 分解锁死亡回退；700 / 1000 分提升储备上限。</p>
-            </div>
-          </article>
-          <article class="guide-detail-item guide-detail-audio">
-            <span class="guide-detail-index">06</span>
-            <div>
-              <strong>音效提示</strong>
-              <p>道具结束前三下倒计时；进化/回溯护盾结束仅轻响一次。</p>
-            </div>
-          </article>
-        </div>
-
-        <button id="guideBackButton" class="guide-toggle-button guide-back-button" type="button">返回</button>
       </div>
     </section>
 
@@ -163,15 +106,66 @@
         <button id="startButton" class="primary-button" type="button">开始游戏</button>
         <button id="restartButton" class="secondary-button" type="button">重新开始</button>
       </div>
-      <button id="soundButton" class="secondary-button sound-button" type="button">音效：开</button>
+      <button id="soundButton" class="secondary-button sound-button" type="button">声音：开</button>
       <p id="statusText">等待开始</p>
     </footer>
+
+    <section id="mechanicsPanel" class="mechanics-panel is-hidden" aria-label="机制说明">
+      <div class="mechanics-header">
+        <h2>机制说明</h2>
+        <button id="mechanicsBackButton" class="guide-toggle-button" type="button">返回游戏</button>
+      </div>
+
+      <div class="mechanics-list">
+        <article class="mechanics-card">
+          <h3>影子路线</h3>
+          <p class="mechanics-summary">吃到红宝石后，近期路线会变成影子障碍。</p>
+          <p class="mechanics-detail">影子会先出现预警，再凝结成实体。玩家需要考虑自己刚刚走过的路线是否会影响后续移动空间。</p>
+        </article>
+        <article class="mechanics-card">
+          <h3>边缘得分</h3>
+          <p class="mechanics-summary">越靠近边缘的红宝石分数越高。</p>
+          <p class="mechanics-detail">边缘区域风险更高，容易被墙体和影子夹住，因此用额外分数鼓励玩家在安全路线和高收益路线之间做选择。</p>
+        </article>
+        <article class="mechanics-card">
+          <h3>道具系统</h3>
+          <p class="mechanics-summary">道具用于清障、加速、得分、吸取和压缩蛇身。</p>
+          <p class="mechanics-detail">清影解决影子压力，超频提供短暂强势期，棱彩提升得分，磁铁降低拾取压力，凝核扩大活动空间。</p>
+        </article>
+        <article class="mechanics-card">
+          <h3>外观进化</h3>
+          <p class="mechanics-summary">分数提升后，蛇会解锁新的外观和速度阶段。</p>
+          <p class="mechanics-detail">外观变化用于给玩家成长反馈，同时速度提升会让后期节奏更紧张。</p>
+        </article>
+        <article class="mechanics-card">
+          <h3>影子回溯</h3>
+          <p class="mechanics-summary">达到指定分数后，死亡时可以回到数秒前。</p>
+          <p class="mechanics-detail">回溯提供一次容错机会，但不是无限保命。它能缓解后期失误带来的挫败感，也让玩家愿意继续挑战高分。</p>
+        </article>
+        <article class="mechanics-card">
+          <h3>音效反馈</h3>
+          <p class="mechanics-summary">不同事件会通过音效提示当前状态。</p>
+          <p class="mechanics-detail">吃红宝石、获得道具、倒计时、护盾结束、回溯触发等都有声音反馈，帮助玩家在高节奏下理解当前发生了什么。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="leaderboard-panel" aria-label="排行榜">
+      <div class="leaderboard-header">
+        <h2>排行榜</h2>
+        <span>Top 10</span>
+      </div>
+      <ol id="leaderboardList" class="leaderboard-list"></ol>
+    </section>
 
     <p class="design-note">
       玩家过去的路线会转化为影子障碍，后期通过外观进化、道具、缩身和回溯管理风险。
     </p>
   </main>
 
-  <script src="script.js"></script>
+  <div id="achievementToast" class="achievement-toast" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js?v=sound-toast1"></script>
 </body>
 </html>
