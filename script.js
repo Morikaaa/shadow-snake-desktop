@@ -21,6 +21,10 @@ const startButton = document.querySelector("#startButton");
 const overlayStartButton = document.querySelector("#overlayStartButton");
 const restartButton = document.querySelector("#restartButton");
 const soundButton = document.querySelector("#soundButton");
+const bgmVolumeSlider = document.querySelector("#bgmVolumeSlider");
+const sfxVolumeSlider = document.querySelector("#sfxVolumeSlider");
+const bgmVolumeMascot = document.querySelector("#bgmVolumeMascot");
+const sfxVolumeMascot = document.querySelector("#sfxVolumeMascot");
 const playerAvatar = document.querySelector("#playerAvatar");
 const playerProfileName = document.querySelector("#playerProfileName");
 const guideTitle = document.querySelector("#guideTitle");
@@ -28,12 +32,17 @@ const guideDetailButton = document.querySelector("#guideDetailButton");
 const guideSummary = document.querySelector("#guideSummary");
 const mechanicsPanel = document.querySelector("#mechanicsPanel");
 const mechanicsBackButton = document.querySelector("#mechanicsBackButton");
+const countdownToast = document.querySelector("#countdownToast");
 
 const gridSize = 24;
 const cellSize = canvas.width / gridSize;
 const bestScoreKey = "shadow-snake-best-score";
 const playerNameKey = "shadow-snake-player-name";
 const playerAvatarKey = "shadow-snake-player-avatar";
+const bgmVolumeKey = "shadow-snake-bgm-volume-v3";
+const sfxVolumeKey = "shadow-snake-sfx-volume-v3";
+const bgmSliderMaxVolume = 0.28;
+const sfxSliderCurve = 0.2;
 const avatarPool = ["🐍", "🌸", "⭐", "💎", "🍬", "🦊", "🐱", "🐰", "🧸", "🎮", "🌙", "🍓"];
 const SUPABASE_URL = "https://ziwcvppreuwefooetbhv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_6i_z6wioqkwI72mV3Pxpfg_p8yVDrc_";
@@ -54,6 +63,7 @@ const speedRatio = 0.88;
 const magnetRange = 3;
 const rewindWindow = 4000;
 const rewindTargetAge = 3000;
+const countdownCueVolumeBoost = 2.2;
 
 const progressTiers = [
   {
@@ -277,15 +287,21 @@ let hasStartedOnce = false;
 let currentPlayerName = "";
 let currentPlayerAvatar = "";
 let hasSubmittedCurrentScore = false;
+let currentSessionId = "";
+let gameStartedAt = 0;
 let leaderboardCache = [];
 let achievementToastTimer = null;
 let currentBgm = null;
 let currentBgmSrc = "";
-let bgmVolume = 0.12;
+let bgmVolume = 0.08;
+let sfxVolume = 0.95;
 let bgmFadeTimer = null;
 let outgoingBgm = null;
 let outgoingBgmFadeTimer = null;
 let bgmSwitchToken = 0;
+let countdownTutorialShownCount = 0;
+const maxCountdownTutorialShown = 2;
+let countdownToastTimer = null;
 
 startButton.addEventListener("click", handleStartButtonClick);
 
@@ -301,6 +317,29 @@ if (playerNameInput) {
   playerNameInput.addEventListener("input", handlePlayerNameInput);
 }
 
+if (bgmVolumeSlider) {
+  bgmVolumeSlider.addEventListener("input", function () {
+    bgmVolume = bgmSliderValueToVolume(bgmVolumeSlider.value);
+    saveVolumeSettings();
+    updateVolumeMascots();
+
+    if (currentBgm) {
+      currentBgm.volume = bgmVolume;
+    }
+  });
+}
+
+if (sfxVolumeSlider) {
+  sfxVolumeSlider.addEventListener("input", function () {
+    sfxVolume = sfxSliderValueToVolume(sfxVolumeSlider.value);
+    saveVolumeSettings();
+    updateVolumeMascots();
+    playSound("ui");
+  });
+}
+
+window.addEventListener("resize", updateVolumeMascots);
+
 if (guideDetailButton) {
   guideDetailButton.addEventListener("click", showMechanicsPanel);
 }
@@ -312,6 +351,7 @@ if (mechanicsBackButton) {
 loadPlayerName();
 loadPlayerProfile();
 updatePlayerProfile();
+loadVolumeSettings();
 loadLeaderboard();
 updateSoundButton();
 setupBoard();
@@ -379,7 +419,10 @@ function startGame() {
 
   assignRandomAvatarIfNeeded();
   updatePlayerProfile();
+  currentSessionId = createGameSessionId();
+  gameStartedAt = Date.now();
   hasSubmittedCurrentScore = false;
+  countdownTutorialShownCount = 0;
   hasStartedOnce = true;
   ensureAudioReady();
   playSound("ui");
@@ -437,6 +480,106 @@ function createSupabaseClient() {
     console.error("Supabase 初始化失败：", error);
     return null;
   }
+}
+
+function createGameSessionId() {
+  if (window.crypto && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return String(Date.now()) + "-" + Math.random().toString(16).slice(2);
+}
+
+function clampVolume(value) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, numericValue));
+}
+
+function bgmSliderValueToVolume(sliderValue) {
+  return clampVolume((Number(sliderValue) / 100) * bgmSliderMaxVolume);
+}
+
+function bgmVolumeToSliderValue(volume) {
+  return String(Math.round((clampVolume(volume) / bgmSliderMaxVolume) * 100));
+}
+
+function sfxSliderValueToVolume(sliderValue) {
+  const ratio = clampVolume(Number(sliderValue) / 100);
+  return clampVolume(Math.pow(ratio, sfxSliderCurve));
+}
+
+function sfxVolumeToSliderValue(volume) {
+  const ratio = Math.pow(clampVolume(volume), 1 / sfxSliderCurve);
+  return String(Math.round(ratio * 100));
+}
+
+function loadVolumeSettings() {
+  try {
+    const savedBgm = localStorage.getItem(bgmVolumeKey);
+    const savedSfx = localStorage.getItem(sfxVolumeKey);
+
+    if (savedBgm !== null) {
+      bgmVolume = clampVolume(savedBgm);
+    }
+
+    if (savedSfx !== null) {
+      sfxVolume = clampVolume(savedSfx);
+    }
+  } catch (error) {
+    console.warn("音量设置读取失败：", error);
+  }
+
+  if (bgmVolumeSlider) {
+    bgmVolumeSlider.value = bgmVolumeToSliderValue(bgmVolume);
+  }
+
+  if (sfxVolumeSlider) {
+    sfxVolumeSlider.value = sfxVolumeToSliderValue(sfxVolume);
+  }
+
+  updateVolumeMascots();
+}
+
+function saveVolumeSettings() {
+  try {
+    localStorage.setItem(bgmVolumeKey, String(bgmVolume));
+    localStorage.setItem(sfxVolumeKey, String(sfxVolume));
+  } catch (error) {
+    console.warn("音量设置保存失败：", error);
+  }
+}
+
+function updateMascotPosition(slider, mascot) {
+  if (!slider || !mascot) {
+    return;
+  }
+
+  const min = Number(slider.min) || 0;
+  const max = Number(slider.max) || 100;
+  const value = Number(slider.value) || 0;
+  const ratio = max === min ? 0 : (value - min) / (max - min);
+  const wrap = slider.closest(".cute-range-wrap");
+
+  if (!wrap) {
+    mascot.style.left = ratio * 100 + "%";
+    return;
+  }
+
+  const sidePadding = 16;
+  const usableWidth = Math.max(0, wrap.clientWidth - sidePadding * 2);
+  const left = sidePadding + usableWidth * ratio;
+
+  mascot.style.left = left + "px";
+}
+
+function updateVolumeMascots() {
+  updateMascotPosition(bgmVolumeSlider, bgmVolumeMascot);
+  updateMascotPosition(sfxVolumeSlider, sfxVolumeMascot);
 }
 
 function loadPlayerName() {
@@ -562,45 +705,114 @@ async function submitScoreIfNeeded(finalScore, finalPlayerName) {
 
   const scoreToSubmit = Number(finalScore) || 0;
   const playerNameToSubmit = finalPlayerName ? String(finalPlayerName).trim().slice(0, 12) : "";
+  const durationMs = Date.now() - gameStartedAt;
 
   if (!playerNameToSubmit || scoreToSubmit <= 0) {
     return;
   }
 
-  if (!supabaseClient) {
-    console.warn("Supabase 未配置，分数未上传");
-    renderLeaderboardMessage("排行榜未配置");
+  if (!currentSessionId || durationMs <= 0) {
+    console.warn("缺少 sessionId 或游戏时长异常，成绩未提交");
     return;
+  }
+
+  if (!supabaseClient) {
+    console.warn("Supabase 未配置，成绩未提交");
+    return;
+  }
+
+  if (statusText) {
+    statusText.textContent = "成绩验证中...";
   }
 
   hasSubmittedCurrentScore = true;
-  let error = null;
 
   try {
-    const result = await supabaseClient
-      .from("leaderboard")
-      .insert({
-        player_name: playerNameToSubmit,
-        score: scoreToSubmit
-      });
+    const { data, error } = await supabaseClient.functions.invoke("submit-run", {
+      body: {
+        playerName: playerNameToSubmit,
+        score: scoreToSubmit,
+        sessionId: currentSessionId,
+        durationMs: durationMs
+      }
+    });
 
-    error = result.error;
+    if (error || !data || data.ok === false) {
+      console.warn("成绩提交返回异常，开始二次确认：", error || data);
+
+      const isActuallyUploaded = await verifySubmittedScoreInLeaderboard(playerNameToSubmit, scoreToSubmit);
+
+      if (isActuallyUploaded) {
+        if (statusText) {
+          statusText.textContent = "成绩已上传";
+        }
+
+        await loadLeaderboard();
+        return;
+      }
+
+      console.error("成绩提交失败：", error || data);
+      hasSubmittedCurrentScore = false;
+
+      if (statusText) {
+        statusText.textContent = "成绩提交失败";
+      }
+
+      return;
+    }
+
+    if (statusText) {
+      statusText.textContent = "成绩已验证并上传";
+    }
+
+    await loadLeaderboard();
   } catch (requestError) {
-    error = requestError;
-  }
+    console.warn("成绩提交请求异常，开始二次确认：", requestError);
 
-  if (error) {
-    console.error("提交分数失败：", error);
+    const isActuallyUploaded = await verifySubmittedScoreInLeaderboard(playerNameToSubmit, scoreToSubmit);
+
+    if (isActuallyUploaded) {
+      if (statusText) {
+        statusText.textContent = "成绩已上传";
+      }
+
+      await loadLeaderboard();
+      return;
+    }
+
+    console.error("成绩提交请求失败：", requestError);
     hasSubmittedCurrentScore = false;
 
     if (statusText) {
-      statusText.textContent = "分数上传失败，请检查网络或 Supabase 配置";
+      statusText.textContent = "成绩提交失败";
     }
+  }
+}
 
-    return;
+async function verifySubmittedScoreInLeaderboard(playerName, scoreValue) {
+  if (!supabaseClient || !playerName || !scoreValue) {
+    return false;
   }
 
-  loadLeaderboard();
+  try {
+    const { data, error } = await supabaseClient
+      .from("leaderboard")
+      .select("player_name, score, created_at")
+      .eq("player_name", playerName)
+      .eq("score", scoreValue)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn("成绩二次确认失败：", error);
+      return false;
+    }
+
+    return Array.isArray(data) && data.length > 0;
+  } catch (error) {
+    console.warn("成绩二次确认请求失败：", error);
+    return false;
+  }
 }
 
 async function loadLeaderboard() {
@@ -671,6 +883,27 @@ function showAchievementToast(title, subtitle) {
   achievementToastTimer = setTimeout(function () {
     achievementToast.classList.remove("is-visible");
   }, 2200);
+}
+
+function showCountdownToast(number) {
+  if (!countdownToast) {
+    return;
+  }
+
+  clearTimeout(countdownToastTimer);
+
+  countdownToast.innerHTML =
+    '<span class="countdown-toast-icon">🎀</span>' +
+    '<span class="countdown-toast-number">' + number + '</span>' +
+    '<span class="countdown-toast-text">道具快结束啦～</span>';
+
+  countdownToast.classList.remove("is-visible");
+  void countdownToast.offsetWidth;
+  countdownToast.classList.add("is-visible");
+
+  countdownToastTimer = setTimeout(function () {
+    countdownToast.classList.remove("is-visible");
+  }, 760);
 }
 
 function renderLeaderboard(items) {
@@ -1550,7 +1783,12 @@ function endGame(reason) {
     showAchievementToast("👑 冲进前三！", "你的分数进入排行榜前三啦～");
   }
 
-  submitScoreIfNeeded(finalScore, finalPlayerName);
+  if (finalScore > 0 && finalPlayerName) {
+    submitScoreIfNeeded(finalScore, finalPlayerName);
+  } else if (statusText) {
+    statusText.textContent = "本局结束";
+  }
+
   updateHud();
   overlay.classList.remove("is-hidden");
   overlay.classList.remove("is-start-screen");
@@ -1558,7 +1796,6 @@ function endGame(reason) {
   overlayTitle.textContent = "最终分数 " + finalScore;
   overlayText.textContent = reason;
   startButton.textContent = "再玩一次";
-  statusText.textContent = "本局结束";
 }
 
 function getMoveDelay() {
@@ -1899,7 +2136,7 @@ function flashHudElement(element, className, duration) {
 }
 
 function flashRewindHud(type) {
-  const card = rewindText ? (rewindText.closest(".stats div") || rewindText.parentElement || rewindText) : null;
+  const card = rewindText ? rewindText.closest(".stat-rewind") || rewindText.closest(".stat-card") : null;
 
   if (type === "gain") {
     flashHudElement(card, "hud-flash-rewind-gain", 1000);
@@ -2150,6 +2387,23 @@ function playTimedWarnings(effectType, expiresAt, now, marks) {
 
 function playEffectEndingWarning(effectType, level) {
   playSound("warning-countdown-" + level);
+
+  if (countdownTutorialShownCount < maxCountdownTutorialShown) {
+    const countdownNumberMap = {
+      1500: 3,
+      1000: 2,
+      500: 1
+    };
+    const countdownNumber = countdownNumberMap[level];
+
+    if (countdownNumber) {
+      showCountdownToast(countdownNumber);
+    }
+
+    if (level === 500) {
+      countdownTutorialShownCount = countdownTutorialShownCount + 1;
+    }
+  }
 }
 
 function drawFrame(now) {
@@ -3243,6 +3497,42 @@ function ensureAudioReady() {
   }
 }
 
+function getToneGain(baseVolume, gainMultiplier, maxGain) {
+  const safeBaseVolume = Number(baseVolume) || 0;
+  const safeMultiplier = Number(gainMultiplier) || 1;
+  const safeMaxGain = Number(maxGain) || 0.34;
+  const gainValue = Math.min(safeMaxGain, Math.max(0, safeBaseVolume * sfxVolume * safeMultiplier));
+
+  return Math.max(0.0001, gainValue);
+}
+
+function playCountdownCue(frequency, baseGain, duration, waveType, startTime, endFrequency) {
+  const countdownGain = Math.min(0.34, baseGain * sfxVolume * countdownCueVolumeBoost);
+
+  playTone(frequency, duration, waveType, countdownGain, startTime, endFrequency, {
+    attack: 0.01,
+    maxGain: 0.34,
+    rawGain: true
+  });
+}
+
+function duckBgmForCountdown() {
+  if (!currentBgm || !soundEnabled) {
+    return;
+  }
+
+  const originalTarget = bgmVolume;
+  const duckedVolume = Math.max(0.025, bgmVolume * 0.45);
+
+  currentBgm.volume = Math.min(currentBgm.volume, duckedVolume);
+
+  setTimeout(function () {
+    if (currentBgm && soundEnabled && gameState === "playing") {
+      fadeBgmTo(originalTarget, 260);
+    }
+  }, 260);
+}
+
 function playSound(type) {
   if (!soundEnabled) {
     return;
@@ -3277,9 +3567,9 @@ function playSound(type) {
     playTone(620, 0.08, "square", 0.026, now);
     playTone(420, 0.12, "triangle", 0.028, now + 0.05);
   } else if (type === "rewind") {
-    playTone(980, 0.08, "triangle", 0.04, now);
-    playTone(640, 0.12, "sine", 0.038, now + 0.07);
-    playTone(420, 0.16, "triangle", 0.032, now + 0.16);
+    playTone(980, 0.08, "triangle", 0.052, now);
+    playTone(640, 0.12, "sine", 0.05, now + 0.07);
+    playTone(420, 0.16, "triangle", 0.044, now + 0.16);
   } else if (type === "shadow") {
     playTone(130, 0.2, "sawtooth", 0.035, now);
     playTone(92, 0.18, "triangle", 0.025, now + 0.05);
@@ -3287,13 +3577,13 @@ function playSound(type) {
     playTone(260, 0.18, "sawtooth", 0.05, now);
     playTone(150, 0.26, "sawtooth", 0.045, now + 0.12);
   } else if (type === "gameOver") {
-    playTone(740, 0.11, "sine", 0.046, now);
-    playTone(620, 0.13, "triangle", 0.044, now + 0.1);
-    playTone(480, 0.18, "sine", 0.04, now + 0.22);
-    playTone(880, 0.08, "triangle", 0.018, now + 0.42);
+    playTone(740, 0.11, "sine", 0.06, now);
+    playTone(620, 0.13, "triangle", 0.056, now + 0.1);
+    playTone(480, 0.18, "sine", 0.052, now + 0.22);
+    playTone(880, 0.08, "triangle", 0.025, now + 0.42);
   } else if (type === "phase") {
-    playTone(760, 0.08, "triangle", 0.04, now);
-    playTone(1180, 0.1, "sine", 0.026, now + 0.04);
+    playTone(760, 0.08, "triangle", 0.05, now);
+    playTone(1180, 0.1, "sine", 0.035, now + 0.04);
   } else if (type === "shield-end") {
     playTone(620, 0.16, "triangle", 0.014, now, 420);
     playTone(1080, 0.18, "sine", 0.007, now + 0.018, 760);
@@ -3305,18 +3595,22 @@ function playSound(type) {
     playTone(540, 0.06, "sine", 0.025, now);
     playTone(720, 0.07, "sine", 0.02, now + 0.04);
   } else if (type === "unlock") {
-    playTone(420, 0.62, "triangle", 0.04, now, 980);
-    playTone(760, 0.58, "sine", 0.032, now + 0.015, 1760);
-    playTone(1880, 0.32, "sine", 0.01, now + 0.06, 2880);
+    playTone(420, 0.62, "triangle", 0.055, now, 980);
+    playTone(760, 0.58, "sine", 0.044, now + 0.015, 1760);
+    playTone(1880, 0.32, "sine", 0.018, now + 0.06, 2880);
   } else if (type === "powerUp") {
-    playTone(640, 0.11, "triangle", 0.04, now);
-    playTone(960, 0.13, "sine", 0.03, now + 0.035);
+    playTone(640, 0.11, "triangle", 0.07, now);
+    playTone(960, 0.13, "sine", 0.05, now + 0.035);
   } else if (type === "warning-countdown-1500") {
-    playTone(820, 0.075, "sine", 0.024, now);
+    duckBgmForCountdown();
+    playCountdownCue(620, 0.13, 0.15, "triangle", now);
   } else if (type === "warning-countdown-1000") {
-    playTone(1040, 0.08, "sine", 0.028, now);
+    duckBgmForCountdown();
+    playCountdownCue(760, 0.16, 0.16, "triangle", now);
   } else if (type === "warning-countdown-500") {
-    playTone(1320, 0.09, "triangle", 0.032, now);
+    duckBgmForCountdown();
+    playCountdownCue(920, 0.2, 0.18, "triangle", now);
+    playCountdownCue(1220, 0.11, 0.12, "sine", now + 0.045);
   } else if (type === "warning-haste" || type === "warning-hasteShield") {
     playTone(920, 0.04, "square", 0.022, now);
     playTone(700, 0.05, "square", 0.02, now + 0.045);
@@ -3354,10 +3648,14 @@ function playFoodComboSound(combo) {
   playTone(mainFreq * 1.5, 0.07, "triangle", 0.026, now + 0.045);
 }
 
-function playTone(frequency, duration, waveType, volume, startTime, endFrequency) {
+function playTone(frequency, duration, waveType, volume, startTime, endFrequency, options) {
   const oscillator = audioContext.createOscillator();
   const gain = audioContext.createGain();
   const endTime = startTime + duration;
+  const attack = options && options.attack ? options.attack : 0.015;
+  const gainValue = options && options.rawGain
+    ? Math.max(0.0001, Math.min(options.maxGain || 0.34, volume))
+    : getToneGain(volume, options && options.gainMultiplier, options && options.maxGain);
 
   oscillator.type = waveType;
   oscillator.frequency.setValueAtTime(frequency, startTime);
@@ -3367,7 +3665,7 @@ function playTone(frequency, duration, waveType, volume, startTime, endFrequency
   }
 
   gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.exponentialRampToValueAtTime(volume, startTime + 0.015);
+  gain.gain.exponentialRampToValueAtTime(gainValue, startTime + attack);
   gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
 
   oscillator.connect(gain);

@@ -4,57 +4,68 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>影子贪吃蛇</title>
-  <link rel="stylesheet" href="style.css?v=sound-toast1">
+  <link rel="stylesheet" href="style.css?v=volume-rewind-hud-fix1">
 </head>
 <body>
   <main class="game-shell">
-    <header class="top-bar">
-      <div class="top-heading">
-        <div>
-          <p class="eyebrow">Canvas Game</p>
-          <h1>影子贪吃蛇</h1>
+    <aside class="left-panel">
+      <header class="top-bar">
+        <div class="top-heading">
+          <div>
+            <p class="eyebrow">Canvas Game</p>
+            <h1>影子贪吃蛇</h1>
+          </div>
+
+          <div class="player-profile" id="playerProfile" aria-label="玩家信息">
+            <span class="player-avatar" id="playerAvatar">🐍</span>
+            <span class="player-profile-name" id="playerProfileName">未命名玩家</span>
+          </div>
         </div>
 
-        <div class="player-profile" id="playerProfile" aria-label="玩家信息">
-          <span class="player-avatar" id="playerAvatar">🐍</span>
-          <span class="player-profile-name" id="playerProfileName">未命名玩家</span>
-        </div>
-      </div>
+        <section class="stats" aria-label="游戏数据">
+          <div class="stat-card">
+            <span>分数</span>
+            <strong id="scoreText">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>最高分</span>
+            <strong id="bestScoreText">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>速度</span>
+            <strong id="speedText">1</strong>
+          </div>
+          <div class="stat-card">
+            <span>当前外观</span>
+            <strong id="skinText">默认</strong>
+          </div>
+          <div class="stat-card">
+            <span>当前效果</span>
+            <strong id="effectText">无</strong>
+          </div>
+          <div class="stat-card stat-combo">
+            <span>连击</span>
+            <strong id="comboText">Combo x0</strong>
+          </div>
+          <div class="stat-card stat-rewind">
+            <span>回溯</span>
+            <strong id="rewindText">0/0</strong>
+          </div>
+        </section>
+      </header>
 
-      <section class="stats" aria-label="游戏数据">
-        <div>
-          <span>分数</span>
-          <strong id="scoreText">0</strong>
+      <section class="leaderboard-panel" aria-label="排行榜">
+        <div class="leaderboard-header">
+          <h2>排行榜</h2>
+          <span>Top 10</span>
         </div>
-        <div>
-          <span>最高分</span>
-          <strong id="bestScoreText">0</strong>
-        </div>
-        <div>
-          <span>速度</span>
-          <strong id="speedText">1</strong>
-        </div>
-        <div>
-          <span>当前外观</span>
-          <strong id="skinText">默认</strong>
-        </div>
-        <div>
-          <span>当前效果</span>
-          <strong id="effectText">无</strong>
-        </div>
-        <div>
-          <span>连击</span>
-          <strong id="comboText">Combo x0</strong>
-        </div>
-        <div>
-          <span>回溯</span>
-          <strong id="rewindText">0/0</strong>
-        </div>
+        <ol id="leaderboardList" class="leaderboard-list"></ol>
       </section>
-    </header>
+    </aside>
 
     <section class="board-wrap">
       <canvas id="gameCanvas" width="720" height="720" aria-label="影子贪吃蛇游戏画布"></canvas>
+      <div id="countdownToast" class="countdown-toast" aria-live="polite"></div>
 
       <div id="overlay" class="overlay">
         <div class="overlay-panel">
@@ -71,44 +82,74 @@
       </div>
     </section>
 
-    <section class="play-guide" aria-label="道具说明">
-      <div class="guide-header">
-        <h2 id="guideTitle">道具说明</h2>
-        <button id="guideDetailButton" class="guide-toggle-button" type="button">机制说明</button>
-      </div>
+    <aside class="right-panel">
+      <section class="play-guide" aria-label="道具说明">
+        <div class="guide-header">
+          <h2 id="guideTitle">道具说明</h2>
+          <button id="guideDetailButton" class="guide-toggle-button mechanics-cta" type="button">
+            <span class="mechanics-cta-arrow">➜</span>
+            <span>机制说明</span>
+          </button>
+        </div>
 
-      <div id="guideSummary" class="guide-grid">
-        <article class="guide-card">
-          <span class="guide-icon clear-icon"></span>
-          <p><strong>清影/凝核</strong>清影子或缩短蛇身。</p>
-        </article>
-        <article class="guide-card">
-          <span class="guide-icon haste-icon"></span>
-          <p><strong>超频</strong>加速，全程穿影护体。</p>
-        </article>
-        <article class="guide-card">
-          <span class="guide-icon prism-icon"></span>
-          <p><strong>棱彩</strong>短暂觉醒，红宝石翻倍。</p>
-        </article>
-        <article class="guide-card">
-          <span class="guide-icon magnet-icon"></span>
-          <p><strong>磁铁</strong>小范围吸收附近红宝石。</p>
-        </article>
-        <article class="guide-card">
-          <span class="guide-icon compress-icon"></span>
-          <p><strong>凝核</strong>压缩蛇身，扩大活动空间。</p>
-        </article>
-      </div>
-    </section>
+        <div id="guideSummary" class="guide-grid">
+          <article class="guide-card">
+            <span class="guide-icon ruby-icon"></span>
+            <p><strong>红宝石</strong>主要得分目标；越靠近边缘，奖励越高。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-icon clear-icon"></span>
+            <p><strong>清影</strong>清除部分影子，临时打开安全空间。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-icon haste-icon"></span>
+            <p><strong>超频</strong>短暂加速，并获得穿影保护。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-icon prism-icon"></span>
+            <p><strong>棱彩</strong>短时间提升红宝石收益。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-icon magnet-icon"></span>
+            <p><strong>磁铁</strong>小范围吸收附近红宝石。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-icon compress-icon"></span>
+            <p><strong>凝核</strong>压缩蛇身，扩大活动空间。</p>
+          </article>
+          <article class="guide-card">
+            <span class="guide-icon rewind-icon"></span>
+            <p><strong>回溯</strong>高分后获得储备，死亡时自动回到数秒前。</p>
+          </article>
+        </div>
+      </section>
 
-    <footer class="control-bar">
-      <div class="button-row">
-        <button id="startButton" class="primary-button" type="button">开始游戏</button>
-        <button id="restartButton" class="secondary-button" type="button">重新开始</button>
-      </div>
-      <button id="soundButton" class="secondary-button sound-button" type="button">声音：开</button>
-      <p id="statusText">等待开始</p>
-    </footer>
+      <footer class="control-bar">
+        <div class="button-row">
+          <button id="startButton" class="primary-button" type="button">开始游戏</button>
+          <button id="restartButton" class="secondary-button" type="button">重新开始</button>
+        </div>
+        <button id="soundButton" class="secondary-button sound-button" type="button">声音：开</button>
+        <div class="volume-panel" aria-label="音量设置">
+          <label class="volume-control bgm-volume-control">
+            <span class="volume-label">🎵 背景音乐</span>
+            <div class="cute-range-wrap">
+              <input id="bgmVolumeSlider" type="range" min="0" max="100" value="29">
+              <span id="bgmVolumeMascot" class="volume-mascot">🐱</span>
+            </div>
+          </label>
+
+          <label class="volume-control sfx-volume-control">
+            <span class="volume-label">🔔 提示音效</span>
+            <div class="cute-range-wrap">
+              <input id="sfxVolumeSlider" type="range" min="0" max="100" value="77">
+              <span id="sfxVolumeMascot" class="volume-mascot">🐶</span>
+            </div>
+          </label>
+        </div>
+        <p id="statusText">等待开始</p>
+      </footer>
+    </aside>
 
     <section id="mechanicsPanel" class="mechanics-panel is-hidden" aria-label="机制说明">
       <div class="mechanics-header">
@@ -123,9 +164,9 @@
           <p class="mechanics-detail">影子会先出现预警，再凝结成实体。玩家需要考虑自己刚刚走过的路线是否会影响后续移动空间。</p>
         </article>
         <article class="mechanics-card">
-          <h3>边缘得分</h3>
-          <p class="mechanics-summary">越靠近边缘的红宝石分数越高。</p>
-          <p class="mechanics-detail">边缘区域风险更高，容易被墙体和影子夹住，因此用额外分数鼓励玩家在安全路线和高收益路线之间做选择。</p>
+          <h3>红宝石与边缘得分</h3>
+          <p class="mechanics-summary">红宝石是主要得分来源，边缘位置奖励更高。</p>
+          <p class="mechanics-detail">普通红宝石提供基础分；靠近边缘的红宝石会提供额外分数。边缘更危险，容易被墙体和影子限制，所以玩家需要在安全路线和高收益路线之间取舍。</p>
         </article>
         <article class="mechanics-card">
           <h3>道具系统</h3>
@@ -139,8 +180,8 @@
         </article>
         <article class="mechanics-card">
           <h3>影子回溯</h3>
-          <p class="mechanics-summary">达到指定分数后，死亡时可以回到数秒前。</p>
-          <p class="mechanics-detail">回溯提供一次容错机会，但不是无限保命。它能缓解后期失误带来的挫败感，也让玩家愿意继续挑战高分。</p>
+          <p class="mechanics-summary">达到分数节点后获得回溯储备，死亡时自动触发。</p>
+          <p class="mechanics-detail">首次达到 220 分解锁 1 次回溯；达到 700 / 1000 分提升储备上限。触发后会回到数秒前，同时扣除部分分数，所以它是容错机会，不是无限复活。</p>
         </article>
         <article class="mechanics-card">
           <h3>音效反馈</h3>
@@ -148,14 +189,6 @@
           <p class="mechanics-detail">吃红宝石、获得道具、倒计时、护盾结束、回溯触发等都有声音反馈，帮助玩家在高节奏下理解当前发生了什么。</p>
         </article>
       </div>
-    </section>
-
-    <section class="leaderboard-panel" aria-label="排行榜">
-      <div class="leaderboard-header">
-        <h2>排行榜</h2>
-        <span>Top 10</span>
-      </div>
-      <ol id="leaderboardList" class="leaderboard-list"></ol>
     </section>
 
     <p class="design-note">
@@ -166,6 +199,6 @@
   <div id="achievementToast" class="achievement-toast" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="script.js?v=sound-toast1"></script>
+  <script src="script.js?v=volume-rewind-hud-fix1"></script>
 </body>
 </html>
